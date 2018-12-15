@@ -31,7 +31,7 @@ class csi_struct:
 
 def unpack_csi_struct(f, endianess='>'): # Big-Endian as Default Value
         csi_inf = csi_struct()
-        csi_inf.field_len   = struct.unpack(endianess + 'H', f.read(2))[0] #Block Length     1Byte
+        #csi_inf.field_len   = struct.unpack(endianess + 'H', f.read(2))[0] #Block Length     1Byte
         csi_inf.timestamp   = struct.unpack(endianess + 'Q' ,f.read(8))[0] #TimeStamp      8Byte
         csi_inf.csi_len     = struct.unpack(endianess + 'H' ,f.read(2))[0] #csi_len        2Byte
         csi_inf.channel     = struct.unpack(endianess + 'H' ,f.read(2))[0] #tx             2Byte

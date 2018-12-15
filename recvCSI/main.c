@@ -25,6 +25,8 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <zmq.h>
+#include <unistd.h>
 
 // UDP Stuff begins Here
 #include <sys/socket.h>
@@ -47,6 +49,7 @@ void sig_handler(int signo)
     if (signo == SIGINT)
         quit = 1;
 }
+
 
 int main(int argc, char* argv[])
 {
@@ -94,6 +97,10 @@ int main(int argc, char* argv[])
             endian_flag = 0x0;
         fwrite(&endian_flag,1,1,fp);
     }
+    void *context = zmq_ctx_new ();
+    void *publisher = zmq_socket (context, ZMQ_PUB);
+    zmq_bind (publisher, "tcp://*:6969");
+#if 0
     if(argc == 3 || argc == 4) {
       clientSocket = socket(PF_INET, SOCK_DGRAM, 0);
       if(clientSocket == -1) {
@@ -109,6 +116,7 @@ int main(int argc, char* argv[])
 
       addr_size = sizeof serverAddr;
     }
+#endif
     if (argc > 4){
         printf(" Too many input arguments !\n");
         return 0;
@@ -156,7 +164,7 @@ int main(int argc, char* argv[])
 
             printf("Recv %dth msg with rate: 0x%02x | payload len: %d\n",total_msg_cnt,csi_status->rate,csi_status->payload_len);
             printf("Recv %dth msg with rate: 0x%02x | payload len: %d\n",total_msg_cnt,csi_status->rate,csi_status->payload_len);
-            printf("Timestamp %d\n", csi_status->tstamp);
+            printf("Timestamp %lu\n", csi_status->tstamp);
             printf("Channel: %d\n",csi_status->channel);
             printf("Bandwidth: %d\n",csi_status->chanBW);
             printf("Rate: %d\n",csi_status->rate);
@@ -173,6 +181,8 @@ int main(int argc, char* argv[])
             
             buf_len = csi_status->buf_len;
             // Network Stuff
+            zmq_send(publisher, buf_addr, buf_len, 0);
+#if 0
             if(argc == 3 || argc == 4) {
               printf("Sending Data\n");
               printf("buf len %d", buf_len);
@@ -184,6 +194,7 @@ int main(int argc, char* argv[])
               printf("Total Data Send %d\n", data_send);
               free(sendbuf);
             }
+#endif
 
             /* log the received data for off-line processing */
             if (log_flag){
@@ -192,6 +203,8 @@ int main(int argc, char* argv[])
             }
         }
     }
+    zmq_close (publisher);
+    zmq_ctx_destroy (context);
     fclose(fp);
     close_csi_device(fd);
     free(csi_status);
