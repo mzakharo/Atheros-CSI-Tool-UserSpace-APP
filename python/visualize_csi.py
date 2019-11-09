@@ -33,6 +33,7 @@ from decimal import Decimal
 from collections import deque
 
 from pyqtgraph.Qt import QtGui, QtCore
+from PyQt4 import QtNetwork
 import pyqtgraph as pg
 # need this to load ui file from QT Creator
 import PyQt4.uic as uic
@@ -42,68 +43,13 @@ import io
 import zmq.green as zmq
 import gevent
 
-from scipy.signal import butter, lfilter
-
-def butter_lowpass(cutoff, fs, order=5):
-    nyq = 0.5 * fs
-    normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
-    return b, a
-
-def butter_lowpass_filter(data, cutoff, fs, order=5):
-    b, a = butter_lowpass(cutoff, fs, order=order)
-    y = lfilter(b, a, data)
-    return y
-
-
-# Filter requirements.
-order = 6
-fs = 10.0       # sample rate, Hz
-cutoff = 0.5      # desired cutoff frequency of the filter, Hz
-
-class Path():
-    def __init__(self):
-        self.hamp = np.zeros((20,56))
-        self.hamp2 = np.zeros((30,56))
-        self.sads = np.zeros(56)
-        self.b, self.a = butter_lowpass(cutoff, fs, order=order)
-
-    def calc(self, rxs):
-        self.amplitude = self.norm(np.abs(rxs))
-
-        self.hamp[1:] = self.hamp[:-1]
-        self.hamp[0] =self.amplitude 
-
-        new = []
-        for i in range(56):
-            y = lfilter(self.b, self.a, self.hamp[:,i])
-            new.append(y[-1])
-
-        nnew = np.array(new)
-        self.hamp2[1:] = self.hamp2[:-1]
-        self.hamp2[0] =nnew
-
-        val = np.mean(self.hamp2, axis=0)
-        sad = np.mean(np.abs(nnew-val))
-        self.sads[:-1] = self.sads[1:]
-        self.sads[-1] = sad
-    def norm(self, amplitude):
-        min = np.min(amplitude)
-        return ((amplitude - min) /
-                (np.max(amplitude) - min)) * 100 
-
 class ZMQ_listener():
 
     def __init__(self, carrier, amplitudes, sock, form):
         self.carrier      =   carrier
+        self.amplitude    =   amplitudes
         self.sock = sock
         self.form = form
-        for i in range(56):
-            carrier.append(i)
-        self.form.carrier = carrier
-        self.path = []
-        for i in range(6):
-            self.path.append(Path())
 
     def datagramReceived(self):
         while True:
@@ -114,17 +60,23 @@ class ZMQ_listener():
                 self.calc(csi_inf)
 
     def calc(self, csi_inf):
-        
-        csi = np.array(csi_inf.csi)
-        print(csi.shape)
-        k = 0
-        for i in range(2):
-            for j in range(3):
-                rxs = csi[:,i,j]
-                self.path[k].calc(rxs)
-                self.form.form1[k] = self.path[k].sads
-                k+=1
-        self.form.phase = self.path[1].amplitude
+        channel = csi_inf.channel
+        carriers = csi_inf.num_tones
+        carrier = []
+        phase = []
+        amplitude = []
+        for i in range(0, carriers):
+            p = csi_inf.csi[i][0][0]
+            imag = p.imag
+            real = p.real
+            peak_amplitude = np.sqrt(np.power(real, 2)+ np.power(imag,2))
+            carrier.append(i)
+            amplitude.append(peak_amplitude)
+            phase.append(np.angle(p))
+
+        self.form.carrier = carrier
+        self.form.amplitude = ((np.array(amplitude) - np.min(amplitude)) / (np.max(amplitude) - np.min(amplitude)) * csi_inf.rssi) #normalized phase
+        self.form.phase = np.unwrap(phase)
 
 class UI(QtGui.QWidget):
     def __init__(self, app, parent=None):
@@ -137,30 +89,24 @@ class UI(QtGui.QWidget):
         self.setWindowTitle("Visualize CSI")
 
         self.carrier = []
-        self.form1 = np.zeros((6,56))
-        self.phase = np.zeros(56)
+        self.amplitude = []
+        self.phase = []
         amp = self.box_amp
         amp.setBackground('w')
         amp.setWindowTitle('Amplitude')
         amp.setLabel('bottom', 'Carrier', units='')
         amp.setLabel('left', 'Amplitude', units='')
-        amp.setYRange(0, 10, padding=0)
-        amp.setXRange(0, 56, padding=0)
+        amp.setYRange(0, 90, padding=0)
+        amp.setXRange(0, 114, padding=0)
+        self.penAmp = amp.plot(pen={'color': (0, 100, 0), 'width': 3})
 
-        self.penAmps = []
-        self.colors = [ (100,100,0), (0,100,0), (100,0,100), (0,0,100),
-                (100,0,0), (0,100,100)]
-        for i in range(6):
-            self.penAmps.append(amp.plot(pen={'color': self.colors[i], 'width':
-                3}))
-        
         phase = self.box_phase
         phase.setBackground('w')
         phase.setWindowTitle('Phase')
         phase.setLabel('bottom', 'Carrier', units='')
         phase.setLabel('left', 'Phase', units='')
-        phase.setYRange(0, 200, padding=0)
-        phase.setXRange(0, 56, padding=0)
+        phase.setYRange(-np.pi, np.pi, padding=0)
+        phase.setXRange(0, 114, padding=0)
         self.penPhase = phase.plot(pen={'color': (0, 100, 0), 'width': 3})
 
         self.timer = QtCore.QTimer()
@@ -171,10 +117,7 @@ class UI(QtGui.QWidget):
 
     @QtCore.pyqtSlot()
     def update_plots(self):
-        i = 0
-        for amp in self.penAmps:
-            amp.setData(self.carrier, self.form1[i])
-            i+=1
+        self.penAmp.setData(self.carrier, self.amplitude)
         self.penPhase.setData(self.carrier, self.phase)
         self.process_events()  ## force complete redraw for every plot
 
@@ -191,11 +134,12 @@ def mainloop(app):
 
 ## Start Qt event loop unless running in interactive mode.
 if (__name__ == '__main__'):
+    import sys
 
     app = QtGui.QApplication([])
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
-    socket.connect ("tcp://192.168.1.136:6969")
+    socket.connect ("tcp://breath:6969")
     socket.setsockopt(zmq.SUBSCRIBE, b"")
     form = UI(app=app)
     form.show()
