@@ -21,6 +21,7 @@ import struct
 import logging
 from math import atan2,atan
 import numpy as np
+from numba import njit
 BITS_PER_BYTE = 8
 BITS_PER_SYMBOL = 10
 bitmask = (1 << BITS_PER_SYMBOL) - 1
@@ -51,31 +52,32 @@ def unpack_csi_struct(f, endianess='>'): # Big-Endian as Default Value
         print(csi_inf.timestamp, csi_inf.csi_len, csi_inf.payload_len, csi_inf.nr, csi_inf.nc, csi_inf.num_tones)
         if(csi_inf.csi_len > 0 and csi_inf.nc > 0):
             csi_buf     = f.read(csi_inf.csi_len) #csi        csi_len
-            csi_inf.csi = read_csi(csi_buf, csi_inf.num_tones, csi_inf.nc, csi_inf.nr, csi_inf.csi_len, endianess)
+            csi_inf.csi = read_csi(csi_buf, csi_inf.num_tones, csi_inf.nc, csi_inf.nr)
         else:
-            csi_inf.csi = 0
+            csi_inf.csi = None
         if(csi_inf.payload_len > 0):
-            payload_buf = f.read(csi_inf.payload_len) #payload_len    payload_len
+            csi_inf.payload_buf = f.read(csi_inf.payload_len) #payload_len    payload_len
         else:
-            payload_buf = 0
+            csi_inf.payload_buf = None
         
         return csi_inf
 
-def read_csi(csi_buf, num_tones, nc, nr, csi_len, endianess):
-    csi = []
-    buf = io.BytesIO(csi_buf)
-
+@njit(cache=True)
+def read_csi(buf, num_tones, nc, nr):
+    csi = np.zeros((nr, nc, num_tones), dtype=np.complex128)
     bits_left = 16
-    cur_data = struct.unpack(endianess + 'B' ,buf.read(1))[0]# Read 16Bits at a Time
-    cur_data += (struct.unpack(endianess + 'B' ,buf.read(1))[0] << BITS_PER_BYTE)
+    cur_data  = buf[0]
+    cur_data += buf[1] << BITS_PER_BYTE
+    idx= 2
     for i in range(0, num_tones):
-        tones = []
         for nc_idx in range(0, nc):
-            A = []
             for nr_idx in range(0, nr):
                 if((bits_left - BITS_PER_SYMBOL) < 0):
-                    new_bits = struct.unpack(endianess + 'B' ,buf.read(1))[0]
-                    new_bits += (struct.unpack(endianess + 'B' ,buf.read(1))[0] << BITS_PER_BYTE)
+                    new_bits = buf[idx]
+                    idx += 1
+                    new_bits += buf[idx] << BITS_PER_BYTE
+                    idx += 1
+
                     #print(new_bits)
                     cur_data += new_bits << bits_left
                     bits_left += 16
@@ -87,13 +89,13 @@ def read_csi(csi_buf, num_tones, nc, nr, csi_len, endianess):
                 cur_data = cur_data >> BITS_PER_SYMBOL
 
                 if((bits_left - BITS_PER_SYMBOL) < 0):
-                    new_bits = struct.unpack(endianess + 'B' ,buf.read(1))[0]
-                    try:
-                        new_bits += (struct.unpack(endianess + 'B' ,buf.read(1))[0] << BITS_PER_BYTE)
-                    except struct.error:
-                        new_bits_left = 8
-                    else:
-                        new_bits_left = 16
+                    new_bits = buf[idx]
+                    idx+= 1
+                    new_bits_left = 8
+                    if idx < len(buf):
+                        new_bits += buf[idx] << BITS_PER_BYTE
+                        idx += 1
+                        new_bits_left += 8
                     #print(new_bits)
                     cur_data += new_bits << bits_left
                     bits_left += new_bits_left
@@ -103,12 +105,10 @@ def read_csi(csi_buf, num_tones, nc, nr, csi_len, endianess):
 
                 bits_left -= BITS_PER_SYMBOL
                 cur_data = cur_data >> BITS_PER_SYMBOL
-
-                A.append(complex(real, imag))
-            tones.append(A)
-        csi.append(tones)
+                csi[nr_idx, nc_idx, i] = complex(real, imag)
     return csi
 
+@njit(cache=True)
 def signbit_convert(data, maxbit):
     if(data & (1 << (maxbit -1))):
         data -= (1 << maxbit)
