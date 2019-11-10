@@ -66,7 +66,7 @@ class ZMQ_listener():
         phase = []
         amplitude = []
         for i in range(0, carriers):
-            p = csi_inf.csi[i][0][0]
+            p = csi_inf.csi[i][-1][-1]
             imag = p.imag
             real = p.real
             peak_amplitude = np.sqrt(np.power(real, 2)+ np.power(imag,2))
@@ -76,7 +76,7 @@ class ZMQ_listener():
 
         self.form.carrier = carrier
         self.form.amplitude = ((np.array(amplitude) - np.min(amplitude)) / (np.max(amplitude) - np.min(amplitude)) * csi_inf.rssi) #normalized phase
-        self.form.phase = np.unwrap(phase)
+        self.form.phase = np.unwrap(np.array(phase)) #np.unwrap(phase)
 
 class UI(QtGui.QWidget):
     def __init__(self, app, parent=None):
@@ -105,9 +105,10 @@ class UI(QtGui.QWidget):
         phase.setWindowTitle('Phase')
         phase.setLabel('bottom', 'Carrier', units='')
         phase.setLabel('left', 'Phase', units='')
-        phase.setYRange(-np.pi, np.pi, padding=0)
+        phase.setYRange(-np.pi*4, np.pi*4, padding=0)
         phase.setXRange(0, 114, padding=0)
         self.penPhase = phase.plot(pen={'color': (0, 100, 0), 'width': 3})
+        self._phase = phase
 
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_plots)
@@ -119,6 +120,7 @@ class UI(QtGui.QWidget):
     def update_plots(self):
         self.penAmp.setData(self.carrier, self.amplitude)
         self.penPhase.setData(self.carrier, self.phase)
+        self._phase.setYRange(self.phase.min(), self.phase.max(), padding=0)
         self.process_events()  ## force complete redraw for every plot
 
     def process_events(self):
