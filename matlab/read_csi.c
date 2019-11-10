@@ -16,8 +16,8 @@
 
 #define TONE_40M 114
 #define BITS_PER_BYTE 8
-#define BITS_PER_COMPLEX_SYMBOL (2 * BITS_PER_SYMBOL)
 #define BITS_PER_SYMBOL      10
+#define BITS_PER_COMPLEX_SYMBOL (2 * BITS_PER_SYMBOL)
 
 typedef struct
 {
@@ -40,10 +40,11 @@ void mexFunction(int nlhs, mxArray *plhs[],
     unsigned int  *csi_len_p,csi_len;
     unsigned int  *nr_p,nr;
     unsigned int  *nc_p,nc;
+    unsigned int  *h_size_p, h_size;
     unsigned int  *num_tones_p,num_tones;
 
     unsigned int  bitmask, idx, current_data;
-    unsigned int  h_data, h_idx;
+    unsigned int  h_data;
     
 
     int  k;
@@ -51,7 +52,7 @@ void mexFunction(int nlhs, mxArray *plhs[],
     int  bits_left, nc_idx, nr_idx;
     
     /*  check for proper number of arguments */
-    if(nrhs!=4) {
+    if(nrhs!=5) {
         mexErrMsgIdAndTxt("MIMOToolbox:read_csi_new:nrhs","Four input required.");
     }
     if(nlhs!=1) {
@@ -64,16 +65,19 @@ void mexFunction(int nlhs, mxArray *plhs[],
   
     local_h = mxGetData(prhs[0]);
 
-    nr_p  = mxGetPr(prhs[1]);
+    h_size_p  = (unsigned int *) mxGetPr(prhs[1]);
+    h_size    = *h_size_p;
+
+    nr_p  = (unsigned int *) mxGetPr(prhs[2]);
     nr    = *nr_p;
 
-    nc_p  = mxGetPr(prhs[2]);
+    nc_p  = (unsigned int *) mxGetPr(prhs[3]);
     nc    = *nc_p;
 
-    num_tones_p = mxGetPr(prhs[3]);
+    num_tones_p = (unsigned int *) mxGetPr(prhs[4]);
     num_tones   = *num_tones_p;
 
-    int size[]  = {nr, nc, num_tones};
+    mwSize size[]  = {nr, nc, num_tones};
 
     mxArray *csi  = mxCreateNumericArray(3, size, mxDOUBLE_CLASS, mxCOMPLEX);
     double * ptrR =(double *)mxGetPr(csi);
@@ -83,7 +87,7 @@ void mexFunction(int nlhs, mxArray *plhs[],
 
     /* 10 bit resoluation for H real and imag */
     bitmask = (1 << BITS_PER_SYMBOL) - 1;
-    idx = h_idx = 0;
+    idx = 0;
     h_data = local_h[idx++];
     h_data += (local_h[idx++] << BITS_PER_BYTE);
     current_data = h_data & ((1 << 16) - 1); /* get 16 LSBs first */
@@ -110,9 +114,14 @@ void mexFunction(int nlhs, mxArray *plhs[],
                 if ((bits_left - BITS_PER_SYMBOL) < 0) {
                     /* get the next 16 bits */
                     h_data = local_h[idx++];
-                    h_data += (local_h[idx++] << BITS_PER_BYTE);
-                    current_data += h_data << bits_left;
-                    bits_left += 16;
+                    if (h_size != idx) {
+                        h_data += (local_h[idx++] << BITS_PER_BYTE);
+                        current_data += h_data << bits_left;
+                        bits_left += 16;
+                    } else {
+                        current_data += h_data << bits_left;
+                        bits_left += 8;
+                    }
                 }
                 real = current_data & bitmask;
                 

@@ -83,8 +83,9 @@ class UI(QtGui.QWidget):
         super(UI, self).__init__(parent)
         self.app = app
 
+        ui = os.path.join(os.path.dirname(__file__), 'window.ui')
         # get and show object and layout
-        uic.loadUi('window.ui', self)
+        uic.loadUi(ui, self)
 
         self.setWindowTitle("Visualize CSI")
 
