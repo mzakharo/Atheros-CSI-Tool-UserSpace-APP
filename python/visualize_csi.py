@@ -43,11 +43,22 @@ import io
 import zmq.green as zmq
 import gevent
 
+#https://www.rapidtables.com/web/color/RGB_Color.html#color-table
+COLORS = (
+            ((128,0,0), #maroon
+            (255,99,71), #tomato
+            (255,160,122),), # light salmon
+            ((0,100,0), #dark green
+            (34,139,34), #forest green
+            (0,255,0),), #lime
+            ((0,0,128), #navy
+            (0,0,255), #blue
+            (0,191,255),)) #deep sky blue
+
+
 class ZMQ_listener():
 
-    def __init__(self, carrier, amplitudes, sock, form):
-        self.carrier      =   carrier
-        self.amplitude    =   amplitudes
+    def __init__(self, sock, form):
         self.sock = sock
         self.form = form
 
@@ -60,21 +71,30 @@ class ZMQ_listener():
                 self.calc(csi_inf)
 
     def calc(self, csi_inf):
-        p = csi_inf.csi[-1, -1, :]
-        amplitude = np.abs(p)
-        phase = np.angle(p)
-        carriers = csi_inf.num_tones
-        carrier = np.arange(carriers, dtype=int)
+        csi = csi_inf.csi
+        amps = np.empty(csi.shape)
+        phases = np.empty(csi.shape)
+
+        for nr in range(csi.shape[0]):
+            for nc in range(csi.shape[1]):
+                p = csi[nr, nc, :]
+
+                amplitude = np.abs(p)
+                mx = np.max(amplitude)
+                #mn = np.min(amplitude)
+                #self.form.amplitude = (amplitude - mn) / (mx - mn)
+                amps[nr, nc, :] = amplitude / mx
+
+                phase = np.angle(p)
+                phase = np.unwrap(phase)
+                mn = np.min(phase)
+                mx = np.max(phase)
+                phases[nr, nc, :] = (phase - mn) / (mx - mn)
+
+        self.form.amps = amps
+        self.form.phases = phases
+        carrier = np.arange(csi.shape[2], dtype=int)
         self.form.carrier = carrier
-
-        mn = np.min(amplitude)
-        mx = np.max(amplitude)
-        self.form.amplitude = (amplitude - mn) / (mx - mn)
-
-        phase = np.unwrap(phase)
-        mn = np.min(phase)
-        mx = np.max(phase)
-        self.form.phase =  ((phase - mn) / (mx - mn)) - 0.5
 
 class UI(QtGui.QWidget):
     def __init__(self, app, parent=None):
@@ -85,41 +105,50 @@ class UI(QtGui.QWidget):
         # get and show object and layout
         uic.loadUi(ui, self)
 
+        self.carrier = None
+
         self.setWindowTitle("Visualize CSI")
 
-        self.carrier = []
-        self.amplitude = []
-        self.phase = []
         amp = self.box_amp
         amp.setBackground('w')
         amp.setWindowTitle('Amplitude')
         amp.setLabel('bottom', 'Carrier', units='')
         amp.setLabel('left', 'Amplitude', units='')
-        amp.setYRange(0, 1, padding=0)
+        amp.setYRange(0, 3, padding=0)
         amp.setXRange(0, 114, padding=0)
-        self.penAmp = amp.plot(pen={'color': (0, 100, 0), 'width': 3})
+        self.amp = amp
+        self.penAmp = {}  # amp.plot(pen={'color': (0, 100, 0), 'width': 3})
 
         phase = self.box_phase
         phase.setBackground('w')
         phase.setWindowTitle('Phase')
         phase.setLabel('bottom', 'Carrier', units='')
         phase.setLabel('left', 'Phase', units='')
-        phase.setYRange(-0.5, 0.5, padding=0)
+        phase.setYRange(0, 3, padding=0)
         phase.setXRange(0, 114, padding=0)
-        self.penPhase = phase.plot(pen={'color': (0, 100, 0), 'width': 3})
-        self._phase = phase
+        self.phase = phase
+        self.penPhase = {} # phase.plot(pen={'color': (0, 100, 0), 'width': 3})
 
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_plots)
         self.timer.start(20)
-        self.amp = amp
-        self.box_phase = phase
 
     @QtCore.pyqtSlot()
     def update_plots(self):
-        self.penAmp.setData(self.carrier, self.amplitude)
-        self.penPhase.setData(self.carrier, self.phase)
-        self.process_events()  ## force complete redraw for every plot
+        if self.carrier is not None:
+            for nr in range(self.amps.shape[0]):
+                for nc in range(self.amps.shape[1]):
+                    key = (nr, nc)
+                    amp = self.amps[nr, nc, :]
+                    phase = self.phases[nr, nc, :]
+                    if key not in self.penAmp:
+                        self.penAmp[key] = self.amp.plot(pen={'color': COLORS[nr][nc], 'width': 3})
+                    self.penAmp[key].setData(self.carrier, amp + (nr))
+
+                    if key not in self.penPhase:
+                        self.penPhase[key] = self.phase.plot(pen={'color': COLORS[nr][nc], 'width': 3})
+                    self.penPhase[key].setData(self.carrier, phase + (nr))
+            self.process_events()  ## force complete redraw for every plot
 
     def process_events(self):
         self.app.processEvents()
@@ -144,7 +173,7 @@ if (__name__ == '__main__'):
     form = UI(app=app)
     form.show()
     
-    e=ZMQ_listener([], [], sock=socket, form=form)
+    e=ZMQ_listener(sock=socket, form=form)
 
     gevent.joinall([gevent.spawn(e.datagramReceived), gevent.spawn(mainloop, app)])
     #if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):

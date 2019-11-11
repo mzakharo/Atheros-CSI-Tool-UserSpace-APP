@@ -1,5 +1,4 @@
 *.pyc
 *.DS_STORE
-*.pdf
 *.o
-recv_csi
+__pycache__
