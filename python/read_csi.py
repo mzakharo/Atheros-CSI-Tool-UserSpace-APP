@@ -39,7 +39,7 @@ def unpack_csi_struct(f, endianess='>'): # Big-Endian as Default Value
         csi_inf.timestamp /= 1e3
         csi_inf.csi_len     = struct.unpack(endianess + 'H' ,f.read(2))[0] #csi_len        2Byte
         csi_inf.channel     = struct.unpack(endianess + 'H' ,f.read(2))[0] #tx             2Byte
-        csi_inf.err_info    = struct.unpack(endianess + 'B' ,f.read(1))[0] #err_info       1Byte
+        csi_inf.phy_err     = struct.unpack(endianess + 'B' ,f.read(1))[0] #phy_err   1Byte
         csi_inf.noise_floor = struct.unpack(endianess + 'b' ,f.read(1))[0] #noisefloor     1Byte
         csi_inf.rate        = struct.unpack(endianess + 'B' ,f.read(1))[0] #rate           1Byte
         csi_inf.bw          = struct.unpack(endianess + 'B' ,f.read(1))[0] #bandWidth      1Byte
@@ -47,9 +47,8 @@ def unpack_csi_struct(f, endianess='>'): # Big-Endian as Default Value
         csi_inf.nr          = struct.unpack(endianess + 'B' ,f.read(1))[0] #nr             1Byte
         csi_inf.nc          = struct.unpack(endianess + 'B' ,f.read(1))[0] #nc             1Byte
         csi_inf.rssi        = struct.unpack(endianess + 'B' ,f.read(1))[0] #rssi           1Byte
-        csi_inf.rssi1       = struct.unpack(endianess + 'B' ,f.read(1))[0] #rssi1          1Byte
-        csi_inf.rssi2       = struct.unpack(endianess + 'B' ,f.read(1))[0] #rssi2          1Byte
-        csi_inf.rssi3       = struct.unpack(endianess + 'B' ,f.read(1))[0] #rssi3          1Byte
+        csi_inf.rssis = np.empty(3, dtype=int)
+        csi_inf.rssis[:]       = struct.unpack(endianess + 'BBB' ,f.read(3)) #rssi1          1Byte
         csi_inf.payload_len = struct.unpack(endianess + 'H' ,f.read(2))[0] #payload_len    2Byte Total: 27Byte + csi_len + payload_len
         #print(csi_inf.timestamp, time.time(), csi_inf.csi_len, csi_inf.payload_len, csi_inf.nr, csi_inf.nc, csi_inf.num_tones)
         if(csi_inf.csi_len > 0 and csi_inf.nc > 0):

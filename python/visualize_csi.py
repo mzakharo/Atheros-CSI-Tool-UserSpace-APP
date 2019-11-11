@@ -59,7 +59,8 @@ class ZMQ_listener():
     def calc(self, csi_inf):
         csi = csi_inf.csi
         delay = time.time() - csi_inf.timestamp
-        self.form.title = 'Channel: {} Delay: {:.2f} Noise: {}, Shape: {}'.format(csi_inf.channel, delay, csi_inf.noise_floor, csi.shape)
+        self.form.title = 'Channel: {} Delay: {:.2f} Noise: {}, RSSI {} Shape: {}'.format(csi_inf.channel, delay,
+                csi_inf.noise_floor, csi_inf.rssis, csi.shape)
         amps = np.empty(csi.shape)
         phases = np.empty(csi.shape)
 
