@@ -18,24 +18,10 @@
 # ------------------------------------------------------------------------------------------
 import sys
 import os
-from socket import *
-import struct
-from struct import unpack, pack
-from time import clock, time, sleep
-
-
-import argparse
-import collections
+import time
 import numpy as np
-import copy
-
-from decimal import Decimal
-from collections import deque
 
 from pyqtgraph.Qt import QtGui, QtCore
-from PyQt4 import QtNetwork
-import pyqtgraph as pg
-# need this to load ui file from QT Creator
 import PyQt4.uic as uic
 
 from read_csi import unpack_csi_struct
@@ -72,6 +58,8 @@ class ZMQ_listener():
 
     def calc(self, csi_inf):
         csi = csi_inf.csi
+        delay = time.time() - csi_inf.timestamp
+        self.form.title = 'Channel: {} Delay: {:.2f} Noise: {}, Shape: {}'.format(csi_inf.channel, delay, csi_inf.noise_floor, csi.shape)
         amps = np.empty(csi.shape)
         phases = np.empty(csi.shape)
 
@@ -100,6 +88,8 @@ class UI(QtGui.QWidget):
     def __init__(self, app, parent=None):
         super(UI, self).__init__(parent)
         self.app = app
+
+        self.title = "Waiting for data..."
 
         ui = os.path.join(os.path.dirname(__file__), 'window.ui')
         # get and show object and layout
@@ -148,6 +138,9 @@ class UI(QtGui.QWidget):
                     if key not in self.penPhase:
                         self.penPhase[key] = self.phase.plot(pen={'color': COLORS[nr][nc], 'width': 3})
                     self.penPhase[key].setData(self.carrier, phase + (nr))
+
+            self.setWindowTitle(self.title)
+            self.carrier = None
             self.process_events()  ## force complete redraw for every plot
 
     def process_events(self):
